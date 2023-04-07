@@ -37,7 +37,7 @@ class CharacterPrototype:
         super().__init__()
 
         self.image = pygame.image.load(image_path)
-        self.image = pygame.transform.scale(self.image, (64, 64))
+        self.image = pygame.transform.scale(self.image, (constants.IMAGE_SIZE, constants.IMAGE_SIZE))
 
         self.attributes = kwargs
 
@@ -94,6 +94,8 @@ class CharacterSprite(pygame.sprite.Sprite):
         # can be accessed and manipulated through the surface instance.
         self.pos = pos
         self.surf = self.image
+        self.rect = self.surf.get_rect()
+        self.rect.center = self.pos
 
         self.x_change = 0
         self.y_change = 0
@@ -102,8 +104,6 @@ class CharacterSprite(pygame.sprite.Sprite):
         # area of the screen or a surface. It is an instance
         # of the pygame.Rect class, which provides various
         # attributes and methods to manipulate and work with rectangular areas
-        self.rect = self.surf.get_rect()
-        self.rect.midbottom = self.pos
 
     def move(self, *args):
         pass
@@ -123,65 +123,71 @@ class CharacterSprite(pygame.sprite.Sprite):
 class PlayerSprite(CharacterSprite):
     def __init__(self, pos):
         super().__init__(PlayerPrototype(), pos)
-        self.next_shot = 0
+        self.next_shot = 150
 
-    def move(self, all_sprites, current_time):
+    def shoot(self, all_sprites, lasers, current_time):
         keys = pygame.key.get_pressed()
-
         if True in keys:
-
             if current_time > self.next_shot and keys[pygame.K_SPACE]:
                 self.next_shot += constants.SHOT_DELAY
-                current_pos = vec(self.pos.x, self.pos.y)
-                all_sprites.add(LaserSprite(current_pos))
+                current_pos = vec(self.pos.x - 2, self.pos.y - 35)
+                print("Player Shooting")
+                new_laser = LaserSprite(current_pos)
+                all_sprites.add(new_laser)
+                lasers.add(new_laser)
+        if current_time >= self.next_shot:
+            self.next_shot += constants.SHOT_DELAY
 
+    def hitbox(self, enemies):
+        pass
+
+    def move(self):
+        keys = pygame.key.get_pressed()
+        if True in keys:
             if keys[pygame.K_LEFT]:
                 self.x_change = -5
 
             if keys[pygame.K_RIGHT]:
                 self.x_change = 5
 
-
-
-
-
-
         else:
             self.x_change = 0
 
     def update(self):
         self.pos.x += self.x_change
-        self.rect.midbottom = self.pos
+        self.rect.center = self.pos
+
+    def boundary(self):
+        pass
 
 
 class EnemySprite(CharacterSprite):
     def __init__(self, pos):
         super().__init__(EnemyPrototype(), pos)
         self.direction = 1
+        self.image = pygame.transform.flip(self.prototype.image, False, True)
+        self.surf = self.image
 
-    def move(self):
+    def hitbox(self, lasers):
+        pass
 
-        if self.pos.x > constants.WIDTH * .95:
-            self.y_change = 64
-            self.direction *= -1
+    def boundary(self):
+        pass
 
-        elif self.pos.x < constants.WIDTH * .05:
-            self.y_change = 64
-            self.direction *= -1
-
+    def move(self,enemies):
+        # TAKE A look at the code implemented in the jumper game for spawning platforms 1
+        hits = pygame.sprite.spritecollide(self,enemies,False)
+        if len(hits) > 0:
+            self.x_change = constants.IMAGE_SIZE
         else:
-            self.y_change = 0
+            self.x_change = 0
 
-        if self.direction == 1:
-            self.x_change = -1
-
-        else:
-            self.x_change = 1
+        self.y_change = 1
 
     def update(self):
         self.pos.x += self.x_change
         self.pos.y += self.y_change
-        self.rect.midbottom = self.pos
+        self.rect.center = self.pos
 
 
 class LaserSprite(CharacterSprite):
@@ -189,13 +195,34 @@ class LaserSprite(CharacterSprite):
         super().__init__(LaserPrototype(), pos)
         self.y_change = -10
 
+    def boundary(self):
+        if self.pos.y < 0:
+            self.kill()
+
     def update(self):
         self.pos.y += self.y_change
-        self.rect.midbottom = self.pos
+        self.rect.center = self.pos
+
+    def hitbox(self, enemies):
+        pygame.sprite.spritecollide(self, enemies, True)
 
 
 def restart_game():
     pass
+
+
+def spawn_enemies(time_variables, all_sprites, enemies):
+    current_time = time_variables["current_time"]
+    enemy_time_interval = time_variables["enemy_time_interval"]
+
+    if current_time > time_variables["next_enemy_time"]:
+        time_variables["next_enemy_time"] += enemy_time_interval
+
+        for i in range(4):
+            random_x = random.randrange(round(constants.WIDTH * .05), round(constants.WIDTH * .95))
+            enemy = EnemySprite(vec(random_x, constants.HEIGHT / 10))
+            all_sprites.add(enemy)
+            enemies.add(enemy)
 
 
 def main():
@@ -208,47 +235,45 @@ def main():
     enemies = pygame.sprite.Group()
     lasers = pygame.sprite.Group()
 
+    time_variables = {"next_enemy_time": 0, "current_time": 0, "enemy_time_interval": 0}
+
     # ENEMY TIME SET UP
-    enemy_time_interval = random.randint(1000, 3000)
-    next_enemy_time = 0
+    # enemy_time_interval = random.randint(2000, 5000)
+    # next_enemy_time = 0
 
     # Player Creation
     player = PlayerSprite(vec(constants.WIDTH / 2, constants.HEIGHT * .95))
     all_sprites.add(player)
 
     while True:
-        game_clock.tick(constants.FPS)
         screen.blit(background, (0, 0))
+        # current_time = pygame.time.get_ticks()
+        time_variables["current_time"] = pygame.time.get_ticks()
+        time_variables["enemy_time_interval"] = random.randint(500, 2500)
 
-        current_time = pygame.time.get_ticks()
-        print(f"Current Time:{current_time}")
-        print(f"Next Shot Time:{player.next_shot}")
+        player.shoot(all_sprites, lasers, time_variables["current_time"])
+        player.move()
 
-        player.move(all_sprites, current_time)
-
-        # enemy spawner
-        if current_time > next_enemy_time:
-            next_enemy_time += enemy_time_interval
-            random_x = random.randrange(round(constants.WIDTH * .05), round(constants.WIDTH * .95))
-
-            enemy = EnemySprite(vec(random_x, constants.HEIGHT / 10))
-            all_sprites.add(enemy)
-            enemies.add(enemy)
-
-
+        spawn_enemies(time_variables, all_sprites, enemies)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
 
         for e in enemies:
-            e.move()
+            e.move(enemies)
 
         for sprite in all_sprites:
+
+            if isinstance(sprite, LaserSprite):
+                sprite.hitbox(enemies)
+
+            sprite.boundary()
             sprite.update()
             screen.blit(sprite.surf, sprite.rect)
 
         pygame.display.update()
+        game_clock.tick(constants.FPS)
 
 
 main()
