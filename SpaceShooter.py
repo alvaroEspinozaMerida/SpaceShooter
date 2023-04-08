@@ -67,12 +67,12 @@ class CharacterPrototype:
 # or when you need to create many similar objects with small variations.
 class PlayerPrototype(CharacterPrototype):
     def __init__(self):
-        super().__init__("assets/spaceship.png")
+        super().__init__("assets/player_ship1.png")
 
 
 class EnemyPrototype(CharacterPrototype):
     def __init__(self):
-        super().__init__("assets/rocket.png", movement_speed=.75)
+        super().__init__("assets/enemy_ship1.png", movement_speed=.75)
 
 
 class LaserPrototype(CharacterPrototype):
@@ -124,6 +124,8 @@ class PlayerSprite(CharacterSprite):
     def __init__(self, pos):
         super().__init__(PlayerPrototype(), pos)
         self.next_shot = 150
+        self.lives = 5
+        self.stats = {"points": 0, "enemies_killed": 0, "power_level": 1}
 
     def shoot(self, all_sprites, lasers, current_time):
         keys = pygame.key.get_pressed()
@@ -139,7 +141,9 @@ class PlayerSprite(CharacterSprite):
             self.next_shot += constants.SHOT_DELAY
 
     def hitbox(self, enemies):
-        pass
+        hits = pygame.sprite.spritecollide(self, enemies, True)
+        if hits:
+            self.lives -= 1
 
     def move(self):
         keys = pygame.key.get_pressed()
@@ -174,14 +178,7 @@ class EnemySprite(CharacterSprite):
     def boundary(self):
         pass
 
-    def move(self,enemies):
-        # TAKE A look at the code implemented in the jumper game for spawning platforms 1
-        hits = pygame.sprite.spritecollide(self,enemies,False)
-        if len(hits) > 0:
-            self.x_change = constants.IMAGE_SIZE
-        else:
-            self.x_change = 0
-
+    def move(self, enemies):
         self.y_change = 1
 
     def update(self):
@@ -203,26 +200,53 @@ class LaserSprite(CharacterSprite):
         self.pos.y += self.y_change
         self.rect.center = self.pos
 
-    def hitbox(self, enemies):
-        pygame.sprite.spritecollide(self, enemies, True)
+    def hitbox(self, enemies, player_stats):
+        if pygame.sprite.spritecollide(self, enemies, True):
+            player_stats["points"] += 10
+            player_stats["enemies_killed"] += 1
 
 
-def restart_game():
-    pass
+def restart_game(player, all_sprites, enemies, lasers, screen):
+    player.lives = 5
+    player.pos = vec(constants.WIDTH / 2, constants.HEIGHT * .95)
+    player.stats = {"points": 0, "enemies_killed": 0, "power_level": 1}
+
+    for e in enemies:
+        e.kill()
+    for l in lasers :
+        l.kill()
+
+    for s in all_sprites:
+        if not isinstance(s,PlayerSprite):
+            s.kill()
+
+
+
 
 
 def spawn_enemies(time_variables, all_sprites, enemies):
     current_time = time_variables["current_time"]
     enemy_time_interval = time_variables["enemy_time_interval"]
 
+    positions = []
+
     if current_time > time_variables["next_enemy_time"]:
         time_variables["next_enemy_time"] += enemy_time_interval
 
         for i in range(4):
-            random_x = random.randrange(round(constants.WIDTH * .05), round(constants.WIDTH * .95))
-            enemy = EnemySprite(vec(random_x, constants.HEIGHT / 10))
+            while True:
+                random_x = random.randint(0, constants.WIDTH // constants.IMAGE_SIZE)
+                random_x = random_x * constants.IMAGE_SIZE
+
+                enemy = EnemySprite(vec(random_x, constants.HEIGHT / 10))
+
+                hits = pygame.sprite.spritecollide(enemy, enemies, False)
+
+                if not hits:
+                    enemies.add(enemy)
+                    break
+
             all_sprites.add(enemy)
-            enemies.add(enemy)
 
 
 def main():
@@ -230,10 +254,14 @@ def main():
     background = pygame.image.load("assets/space.jpg")
     background = pygame.transform.scale(background, (constants.WIDTH, constants.HEIGHT))
 
+    font = pygame.font.SysFont("monospace", 30)
+
     # GROUPING SET UP
     all_sprites = pygame.sprite.Group()
     enemies = pygame.sprite.Group()
     lasers = pygame.sprite.Group()
+    player = PlayerSprite(vec(constants.WIDTH / 2, constants.HEIGHT * .95))
+    all_sprites.add(player)
 
     time_variables = {"next_enemy_time": 0, "current_time": 0, "enemy_time_interval": 0}
 
@@ -242,14 +270,15 @@ def main():
     # next_enemy_time = 0
 
     # Player Creation
-    player = PlayerSprite(vec(constants.WIDTH / 2, constants.HEIGHT * .95))
-    all_sprites.add(player)
 
     while True:
         screen.blit(background, (0, 0))
         # current_time = pygame.time.get_ticks()
         time_variables["current_time"] = pygame.time.get_ticks()
         time_variables["enemy_time_interval"] = random.randint(500, 2500)
+
+        if player.lives < 1:
+            restart_game(player, all_sprites, enemies, lasers, screen)
 
         player.shoot(all_sprites, lasers, time_variables["current_time"])
         player.move()
@@ -266,11 +295,20 @@ def main():
         for sprite in all_sprites:
 
             if isinstance(sprite, LaserSprite):
+                sprite.hitbox(enemies, player.stats)
+            else:
                 sprite.hitbox(enemies)
 
             sprite.boundary()
             sprite.update()
             screen.blit(sprite.surf, sprite.rect)
+
+        health_text = font.render(f"Health:{player.lives}", True, (245, 78, 66))
+        screen.blit(health_text, (constants.WIDTH * .01, constants.HEIGHT * .01))
+
+        player_points = player.stats["points"]
+        points_text = font.render(f"Points:{player_points}", True, (245, 78, 66))
+        screen.blit(points_text, (constants.WIDTH * .01, constants.HEIGHT * .05))
 
         pygame.display.update()
         game_clock.tick(constants.FPS)
